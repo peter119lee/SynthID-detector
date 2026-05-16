@@ -91,6 +91,7 @@ Exit codes:
 - **Not 100% accurate** — false negatives can occur on heavily compressed images.
 - **Heavy JPEG compression kills the watermark** — if the image file is unusually small (e.g. 35KB for a 1024x1024 image), the watermark signal may be too degraded to detect. Check the file size before trusting a "no watermark" result.
 - **Only detects current model versions** — each AI model version uses a different watermark key. Templates built from May 2026 images only work for that version. Older Nano Banana versions (original, 1.5, early Pro) will NOT be detected.
+- **Third-party platforms may strip watermarks** — images generated via API proxies or shared through social platforms (QQ, WeChat, Twitter, etc.) may have their watermark destroyed by re-processing, re-compression, or resizing.
 - Requires 10+ reference images per AI source to build templates
 - Different model versions may need separate templates
 - Template quality improves with more reference images (50+ ideal)
