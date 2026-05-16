@@ -72,6 +72,7 @@ input[type="file"] { display: none; }
 }
 .result-item.detected { border-color: #c62828; }
 .result-item.clean { border-color: #2e7d32; }
+.result-item.warn { border-color: #e65100; }
 .result-item img {
   width: 40px; height: 40px;
   border-radius: 6px; object-fit: cover; flex-shrink: 0;
@@ -236,9 +237,18 @@ async function handleFiles(files) {
   for (const file of files) {
     if (!file.type.startsWith('image/')) continue;
     const id = addLoadingItem(file.name);
+    const dims = await getImageDims(file);
     const result = await detect(file);
-    replaceWithResult(id, file, result);
+    replaceWithResult(id, file, result, dims);
   }
+}
+
+function getImageDims(file) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => { resolve({ w: img.width, h: img.height }); URL.revokeObjectURL(img.src); };
+    img.src = URL.createObjectURL(file);
+  });
 }
 
 let itemCounter = 0;
@@ -253,11 +263,28 @@ function addLoadingItem(name) {
   return id;
 }
 
-function replaceWithResult(id, file, { scores, detected, maxScore }) {
+function replaceWithResult(id, file, { scores, detected, maxScore }, dims) {
   const el = document.getElementById(id);
   const thumb = URL.createObjectURL(file);
   const cls = detected ? 'detected' : 'clean';
-  const verdictText = detected ? `${LABELS[detected] || detected} (${maxScore.toFixed(3)})` : 'No watermark';
+
+  // File size and dimensions
+  const sizeKB = (file.size / 1024).toFixed(0);
+  const meta = `${dims.w}x${dims.h} | ${sizeKB}KB`;
+
+  // Check for heavy JPEG compression (small file for large image)
+  const pixels = dims.w * dims.h;
+  const bytesPerPixel = file.size / pixels;
+  const heavyCompression = !detected && bytesPerPixel < 0.15; // ~50KB for 1024x1024
+
+  let verdictText;
+  if (detected) {
+    verdictText = `${LABELS[detected] || detected} (${maxScore.toFixed(3)})`;
+  } else if (heavyCompression) {
+    verdictText = 'No watermark detected \u26A0\uFE0F';
+  } else {
+    verdictText = 'No watermark';
+  }
 
   let badges = '';
   for (const [name, score] of Object.entries(scores)) {
@@ -266,12 +293,14 @@ function replaceWithResult(id, file, { scores, detected, maxScore }) {
     badges += `<span class="score-badge ${hi}">${label} ${score.toFixed(3)}</span>`;
   }
 
-  el.className = `result-item ${cls}`;
+  const warnClass = heavyCompression ? ' warn' : '';
+  el.className = `result-item ${cls}${warnClass}`;
   el.innerHTML = `
     <img src="${thumb}" alt="">
     <div class="result-info">
-      <div class="name">${escHtml(file.name)}</div>
+      <div class="name">${escHtml(file.name)} <span style="color:#666;font-size:0.7rem">${meta}</span></div>
       <div class="verdict ${cls}">${verdictText}</div>
+      ${heavyCompression ? '<div style="font-size:0.7rem;color:#a55;margin-top:0.2rem">File may be too compressed for reliable detection</div>' : ''}
     </div>
     <div class="result-scores">${badges}</div>
   `;
