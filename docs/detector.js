@@ -1,6 +1,6 @@
 /**
  * AI Watermark Detector - Client-side detection of SynthID / GPT-Image2 watermarks
- * Dual strategy: full-image stretch + proportional sub-region for crop robustness.
+ * Method: resize to 512x512, extract noise residual, correlate with template.
  */
 
 const SIZE = 512;
@@ -45,21 +45,18 @@ async function decompress(buffer) {
   return result.buffer;
 }
 
-/**
- * Load image at exact target size, return planar RGB Float32Array
- */
-function loadImageAtSize(file, w, h) {
+function loadImage(file) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
+      canvas.width = SIZE;
+      canvas.height = SIZE;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, w, h);
-      const imageData = ctx.getImageData(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, SIZE, SIZE);
+      const imageData = ctx.getImageData(0, 0, SIZE, SIZE);
       const pixels = imageData.data;
-      const n = w * h;
+      const n = SIZE * SIZE;
       const rgb = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) {
         rgb[i] = pixels[i * 4];
@@ -73,13 +70,9 @@ function loadImageAtSize(file, w, h) {
   });
 }
 
-/**
- * 3-pass box blur approximating Gaussian for arbitrary dimensions
- */
-function gaussianBlur(channel, w, h, sigma) {
-  const n = w * h;
+function gaussianBlur(channel, sigma) {
+  const w = SIZE, h = SIZE, n = w * h;
   const radius = Math.round(sigma * 1.5) | 0;
-  if (radius < 1) return new Float32Array(channel);
   const out = new Float32Array(n);
   const tmp = new Float32Array(n);
 
@@ -116,107 +109,41 @@ function gaussianBlur(channel, w, h, sigma) {
   return out;
 }
 
-/**
- * Normalized correlation between two flat arrays
- */
-function normCorr(a, b) {
-  const n = a.length;
-  let sumA = 0, sumB = 0;
-  for (let i = 0; i < n; i++) { sumA += a[i]; sumB += b[i]; }
-  const meanA = sumA / n, meanB = sumB / n;
-  let dot = 0, na = 0, nb = 0;
-  for (let i = 0; i < n; i++) {
-    const va = a[i] - meanA, vb = b[i] - meanB;
-    dot += va * vb; na += va * va; nb += vb * vb;
-  }
-  const denom = Math.sqrt(na * nb);
-  return denom > 1e-10 ? dot / denom : 0;
-}
-
-/**
- * Strategy 1: Stretch to 512x512 (works for full/near-full images)
- */
-async function scoreStretch(file, template) {
-  const rgb = await loadImageAtSize(file, SIZE, SIZE);
+function correlate(residual, template) {
   const n = SIZE * SIZE;
   let best = 0;
   for (let c = 0; c < 3; c++) {
-    const ch = rgb.subarray(c * n, (c + 1) * n);
-    const blurred = gaussianBlur(ch, SIZE, SIZE, 2.0);
-    const residual = new Float32Array(n);
-    for (let i = 0; i < n; i++) residual[i] = ch[i] - blurred[i];
-    const tCh = template.subarray(c * n, (c + 1) * n);
-    best = Math.max(best, normCorr(residual, tCh));
-  }
-  return best;
-}
-
-/**
- * Strategy 2: Proportional sub-region (works for crops)
- * Assumes crop is from center of original. Tries multiple sub-region sizes.
- */
-async function scoreSubRegion(file, template) {
-  // Try the image at several proportional sizes within 512x512
-  const ratios = [1.0, 0.75, 0.5];
-  let best = 0;
-
-  for (const ratio of ratios) {
-    const tw = Math.round(SIZE * ratio);
-    const th = Math.round(SIZE * ratio);
-    if (tw < 64 || th < 64) continue;
-
-    const rgb = await loadImageAtSize(file, tw, th);
-    const n = tw * th;
-
-    // Template sub-region (centered)
-    const tl = Math.round((SIZE - tw) / 2);
-    const tt = Math.round((SIZE - th) / 2);
-
-    for (let c = 0; c < 3; c++) {
-      const ch = rgb.subarray(c * n, (c + 1) * n);
-      const blurred = gaussianBlur(ch, tw, th, 2.0);
-      const residual = new Float32Array(n);
-      for (let i = 0; i < n; i++) residual[i] = ch[i] - blurred[i];
-
-      // Extract template sub-region
-      const tSub = new Float32Array(n);
-      for (let y = 0; y < th; y++) {
-        for (let x = 0; x < tw; x++) {
-          tSub[y * tw + x] = template[c * SIZE * SIZE + (y + tt) * SIZE + (x + tl)];
-        }
-      }
-      best = Math.max(best, normCorr(residual, tSub));
+    const offset = c * n;
+    let sumR = 0, sumT = 0;
+    for (let i = 0; i < n; i++) { sumR += residual[offset + i]; sumT += template[offset + i]; }
+    const meanR = sumR / n, meanT = sumT / n;
+    let dot = 0, normR = 0, normT = 0;
+    for (let i = 0; i < n; i++) {
+      const r = residual[offset + i] - meanR;
+      const t = template[offset + i] - meanT;
+      dot += r * t; normR += r * r; normT += t * t;
     }
+    const denom = Math.sqrt(normR * normT);
+    if (denom > 1e-10) best = Math.max(best, dot / denom);
   }
   return best;
 }
 
-/**
- * Main detection: stretch first (fast), fallback to sub-region if not detected
- */
 async function detect(file) {
   const tmpl = await loadTemplates();
+  const rgb = await loadImage(file);
+  const n = SIZE * SIZE;
 
-  // Strategy 1: stretch to 512x512 (fast, works for full images)
+  const residual = new Float32Array(n * 3);
+  for (let c = 0; c < 3; c++) {
+    const ch = rgb.subarray(c * n, (c + 1) * n);
+    const blurred = gaussianBlur(ch, 2.0);
+    for (let i = 0; i < n; i++) residual[c * n + i] = ch[i] - blurred[i];
+  }
+
   const scores = {};
   for (const [name, template] of Object.entries(tmpl)) {
-    scores[name] = await scoreStretch(file, template);
-  }
-
-  // If any detected, return immediately
-  const maxStretch = Math.max(...Object.values(scores));
-  if (maxStretch > THRESHOLD) {
-    let detected = null, maxScore = 0;
-    for (const [name, score] of Object.entries(scores)) {
-      if (score > THRESHOLD && score > maxScore) { detected = name; maxScore = score; }
-    }
-    return { scores, detected, maxScore };
-  }
-
-  // Strategy 2: sub-region fallback (slower, for crops)
-  for (const [name, template] of Object.entries(tmpl)) {
-    const s2 = await scoreSubRegion(file, template);
-    if (s2 > scores[name]) scores[name] = s2;
+    scores[name] = correlate(residual, template);
   }
 
   let detected = null, maxScore = 0;

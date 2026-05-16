@@ -83,6 +83,8 @@ Exit codes:
 | Screenshot (no crop) | Yes |
 | Format conversion | Yes |
 | Metadata stripping | Yes |
+| Crop | No |
+| Rotation | No |
 
 ## Limitations
 
