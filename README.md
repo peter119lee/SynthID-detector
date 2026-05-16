@@ -86,6 +86,8 @@ Exit codes:
 
 ## Limitations
 
+- **Not 100% accurate** — tested ~98% accuracy. False negatives can occur on heavily compressed images.
+- **Heavy JPEG compression kills the watermark** — if the image file is unusually small (e.g. 35KB for a 1024x1024 image), the watermark signal may be too degraded to detect. Check the file size before trusting a "no watermark" result.
 - Requires 10+ reference images per AI source to build templates
 - Different model versions may need separate templates
 - Template quality improves with more reference images (50+ ideal)
