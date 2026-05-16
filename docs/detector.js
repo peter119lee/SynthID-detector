@@ -1,6 +1,6 @@
 /**
  * AI Watermark Detector - Client-side detection of SynthID / GPT-Image2 watermarks
- * Crop-robust via multiscale sliding correlation.
+ * Method: resize to 512x512, extract noise residual, correlate with template.
  */
 
 const SIZE = 512;
@@ -45,18 +45,18 @@ async function decompress(buffer) {
   return result.buffer;
 }
 
-function loadImageAtSize(file, w, h) {
+function loadImage(file) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
+      canvas.width = SIZE;
+      canvas.height = SIZE;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, w, h);
-      const imageData = ctx.getImageData(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, SIZE, SIZE);
+      const imageData = ctx.getImageData(0, 0, SIZE, SIZE);
       const pixels = imageData.data;
-      const n = w * h;
+      const n = SIZE * SIZE;
       const rgb = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) {
         rgb[i] = pixels[i * 4];
@@ -70,10 +70,9 @@ function loadImageAtSize(file, w, h) {
   });
 }
 
-function gaussianBlur(channel, w, h, sigma) {
-  const n = w * h;
+function gaussianBlur(channel, sigma) {
+  const w = SIZE, h = SIZE, n = w * h;
   const radius = Math.round(sigma * 1.5) | 0;
-  if (radius < 1) return new Float32Array(channel);
   const out = new Float32Array(n);
   const tmp = new Float32Array(n);
 
@@ -110,123 +109,41 @@ function gaussianBlur(channel, w, h, sigma) {
   return out;
 }
 
-/**
- * Correlate residual (tw x th) against a sub-region of template at offset (oy, ox)
- */
-function corrPatch(residual, tw, th, template, oy, ox, c) {
-  const rn = tw * th;
-  const rOff = c * rn;
-  let sumR = 0;
-  for (let i = 0; i < rn; i++) sumR += residual[rOff + i];
-  const meanR = sumR / rn;
-
-  let dot = 0, normR = 0, normT = 0;
-  for (let y = 0; y < th; y++) {
-    for (let x = 0; x < tw; x++) {
-      const ri = rOff + y * tw + x;
-      const ti = c * SIZE * SIZE + (y + oy) * SIZE + (x + ox);
-      const r = residual[ri] - meanR;
-      const t = template[ti]; // template already zero-mean per channel from build
-      dot += r * t;
-      normR += r * r;
-      normT += t * t;
-    }
-  }
-  const denom = Math.sqrt(normR * normT);
-  return denom > 1e-10 ? dot / denom : 0;
-}
-
-/**
- * Strategy 1: stretch to 512x512 (fast, for full images)
- */
-async function scoreStretch(file, template) {
-  const rgb = await loadImageAtSize(file, SIZE, SIZE);
+function correlate(residual, template) {
   const n = SIZE * SIZE;
   let best = 0;
   for (let c = 0; c < 3; c++) {
-    const ch = rgb.subarray(c * n, (c + 1) * n);
-    const blurred = gaussianBlur(ch, SIZE, SIZE, 2.0);
-    const residual = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) residual[c * n + i] = ch[i] - blurred[i];
-    // Direct full correlation
+    const offset = c * n;
     let sumR = 0, sumT = 0;
-    for (let i = 0; i < n; i++) { sumR += residual[c * n + i]; sumT += template[c * n + i]; }
+    for (let i = 0; i < n; i++) { sumR += residual[offset + i]; sumT += template[offset + i]; }
     const meanR = sumR / n, meanT = sumT / n;
-    let dot = 0, nR = 0, nT = 0;
+    let dot = 0, normR = 0, normT = 0;
     for (let i = 0; i < n; i++) {
-      const r = residual[c * n + i] - meanR;
-      const t = template[c * n + i] - meanT;
-      dot += r * t; nR += r * r; nT += t * t;
+      const r = residual[offset + i] - meanR;
+      const t = template[offset + i] - meanT;
+      dot += r * t; normR += r * r; normT += t * t;
     }
-    const denom = Math.sqrt(nR * nT);
+    const denom = Math.sqrt(normR * normT);
     if (denom > 1e-10) best = Math.max(best, dot / denom);
   }
   return best;
 }
 
-/**
- * Strategy 2: multiscale sliding (for crops)
- * Try different scale assumptions and slide over template to find best match.
- */
-async function scoreMultiscale(file, template) {
-  const ratios = [0.85, 0.75, 0.6, 0.5];
-  let best = 0;
-
-  for (const ratio of ratios) {
-    const tw = Math.round(SIZE * ratio);
-    const th = Math.round(SIZE * ratio);
-    const rgb = await loadImageAtSize(file, tw, th);
-    const rn = tw * th;
-
-    // Extract residual
-    const residual = new Float32Array(rn * 3);
-    for (let c = 0; c < 3; c++) {
-      const ch = rgb.subarray(c * rn, (c + 1) * rn);
-      const blurred = gaussianBlur(ch, tw, th, 2.0);
-      for (let i = 0; i < rn; i++) residual[c * rn + i] = ch[i] - blurred[i];
-    }
-
-    // Slide over template with coarse step
-    const maxOY = SIZE - th;
-    const maxOX = SIZE - tw;
-    const step = Math.max(1, Math.round(maxOY / 4));
-
-    for (let oy = 0; oy <= maxOY; oy += step) {
-      for (let ox = 0; ox <= maxOX; ox += step) {
-        for (let c = 0; c < 3; c++) {
-          const s = corrPatch(residual, tw, th, template, oy, ox, c);
-          if (s > best) best = s;
-        }
-      }
-    }
-  }
-  return best;
-}
-
-/**
- * Main detection: stretch first (fast), multiscale fallback if not detected
- */
 async function detect(file) {
   const tmpl = await loadTemplates();
+  const rgb = await loadImage(file);
+  const n = SIZE * SIZE;
+
+  const residual = new Float32Array(n * 3);
+  for (let c = 0; c < 3; c++) {
+    const ch = rgb.subarray(c * n, (c + 1) * n);
+    const blurred = gaussianBlur(ch, 2.0);
+    for (let i = 0; i < n; i++) residual[c * n + i] = ch[i] - blurred[i];
+  }
+
   const scores = {};
-
-  // Fast path: stretch
   for (const [name, template] of Object.entries(tmpl)) {
-    scores[name] = await scoreStretch(file, template);
-  }
-
-  if (Math.max(...Object.values(scores)) > THRESHOLD) {
-    let detected = null, maxScore = 0;
-    for (const [name, score] of Object.entries(scores)) {
-      if (score > THRESHOLD && score > maxScore) { detected = name; maxScore = score; }
-    }
-    return { scores, detected, maxScore };
-  }
-
-  // Slow path: multiscale sliding for crops
-  for (const [name, template] of Object.entries(tmpl)) {
-    const s2 = await scoreMultiscale(file, template);
-    if (s2 > scores[name]) scores[name] = s2;
+    scores[name] = correlate(residual, template);
   }
 
   let detected = null, maxScore = 0;
