@@ -192,26 +192,36 @@ async function scoreSubRegion(file, template) {
 }
 
 /**
- * Main detection: run both strategies, take max score
+ * Main detection: stretch first (fast), fallback to sub-region if not detected
  */
 async function detect(file) {
   const tmpl = await loadTemplates();
+
+  // Strategy 1: stretch to 512x512 (fast, works for full images)
   const scores = {};
-
   for (const [name, template] of Object.entries(tmpl)) {
-    const s1 = await scoreStretch(file, template);
-    const s2 = await scoreSubRegion(file, template);
-    scores[name] = Math.max(s1, s2);
+    scores[name] = await scoreStretch(file, template);
   }
 
-  let detected = null;
-  let maxScore = 0;
-  for (const [name, score] of Object.entries(scores)) {
-    if (score > THRESHOLD && score > maxScore) {
-      detected = name;
-      maxScore = score;
+  // If any detected, return immediately
+  const maxStretch = Math.max(...Object.values(scores));
+  if (maxStretch > THRESHOLD) {
+    let detected = null, maxScore = 0;
+    for (const [name, score] of Object.entries(scores)) {
+      if (score > THRESHOLD && score > maxScore) { detected = name; maxScore = score; }
     }
+    return { scores, detected, maxScore };
   }
 
+  // Strategy 2: sub-region fallback (slower, for crops)
+  for (const [name, template] of Object.entries(tmpl)) {
+    const s2 = await scoreSubRegion(file, template);
+    if (s2 > scores[name]) scores[name] = s2;
+  }
+
+  let detected = null, maxScore = 0;
+  for (const [name, score] of Object.entries(scores)) {
+    if (score > THRESHOLD && score > maxScore) { detected = name; maxScore = score; }
+  }
   return { scores, detected, maxScore };
 }
