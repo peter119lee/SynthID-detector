@@ -156,9 +156,12 @@ def check(args):
         import json
         print(json.dumps(all_results, indent=2))
 
-    # Exit code: 2 if any watermark detected
-    if any(any(s > threshold for s in scores.values()) for scores in all_results.values()):
-        sys.exit(2)
+    # Exit code per source
+    EXIT_CODES = {"synthid": 2, "gptimage2": 3, "nanobanana2": 4}
+    for scores in all_results.values():
+        for name, s in scores.items():
+            if s > threshold:
+                sys.exit(EXIT_CODES.get(name, 2))
 
 
 def main():

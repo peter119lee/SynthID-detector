@@ -64,7 +64,9 @@ photo.png: no watermark detected
 Exit codes:
 - `0` — no watermark detected
 - `1` — file error
-- `2` — watermark detected
+- `2` — SynthID detected (Nano Banana Pro)
+- `3` — GPT-Image2 detected
+- `4` — Nano Banana 2 detected
 
 ## Performance
 
