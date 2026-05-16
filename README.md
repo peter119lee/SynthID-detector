@@ -103,7 +103,7 @@ This is an experimental research tool. It should **NOT** be used as the sole bas
 
 - [ ] Build stronger templates with 200+ images per model (currently 12-14)
 - [ ] Test against 50+ diverse real photos (phone cameras, DSLR, memes, screenshots) to validate false positive rate
-- [ ] Add support for Grok, Midjourney, DALL-E 3, and other AI image generators
+- [ ] Add support for other AI image generators (if they embed detectable watermarks)
 - [ ] Investigate frequency-domain carrier detection for crop robustness
 
 ## Files
