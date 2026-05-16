@@ -16,23 +16,17 @@ body {
   align-items: center;
   padding: 2rem 1rem;
 }
-h1 {
-  font-size: 1.8rem;
-  font-weight: 700;
-  margin-bottom: 0.3rem;
-  color: #fff;
-}
-.subtitle {
-  color: #888;
-  font-size: 0.9rem;
-  margin-bottom: 2rem;
+h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 0.3rem; color: #fff; }
+.subtitle { color: #888; font-size: 0.9rem; margin-bottom: 1.5rem; }
+
+.upload-area {
+  width: 100%; max-width: 600px;
+  display: flex; flex-direction: column; gap: 0.75rem;
 }
 .drop-zone {
-  width: 100%;
-  max-width: 500px;
   border: 2px dashed #333;
   border-radius: 12px;
-  padding: 3rem 2rem;
+  padding: 2.5rem 2rem;
   text-align: center;
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
@@ -42,144 +36,132 @@ h1 {
   background: rgba(79, 140, 255, 0.05);
 }
 .drop-zone p { color: #888; margin-top: 0.5rem; font-size: 0.85rem; }
-.drop-zone .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+.drop-zone .icon { font-size: 2rem; margin-bottom: 0.5rem; }
+
+.btn-row { display: flex; gap: 0.5rem; }
+.btn {
+  flex: 1;
+  padding: 0.6rem 1rem;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #141419;
+  color: #ccc;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  text-align: center;
+}
+.btn:hover { border-color: #4f8cff; background: #1a1a24; }
+
 input[type="file"] { display: none; }
 
-#result {
-  width: 100%;
-  max-width: 500px;
+.tags { display: flex; gap: 0.4rem; justify-content: center; margin-top: 0.3rem; }
+.tag { font-size: 0.65rem; padding: 0.15rem 0.5rem; border-radius: 4px; background: #1a1a22; color: #888; }
+
+#results {
+  width: 100%; max-width: 600px;
   margin-top: 1.5rem;
-  display: none;
+  display: flex; flex-direction: column; gap: 0.5rem;
 }
-.result-card {
+.result-item {
+  display: flex; align-items: center; gap: 0.75rem;
   background: #141419;
   border: 1px solid #222;
-  border-radius: 12px;
-  padding: 1.5rem;
-  margin-bottom: 1rem;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
 }
-.result-card.detected { border-color: #f44; }
-.result-card.clean { border-color: #4caf50; }
-.result-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+.result-item.detected { border-color: #c62828; }
+.result-item.clean { border-color: #2e7d32; }
+.result-item img {
+  width: 40px; height: 40px;
+  border-radius: 6px; object-fit: cover; flex-shrink: 0;
 }
-.result-header img {
-  width: 48px;
-  height: 48px;
-  border-radius: 6px;
-  object-fit: cover;
+.result-info { flex: 1; min-width: 0; }
+.result-info .name {
+  font-size: 0.8rem; color: #aaa;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.result-header .filename {
-  font-size: 0.85rem;
-  color: #aaa;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.result-info .verdict { font-size: 0.85rem; font-weight: 600; margin-top: 0.15rem; }
+.result-info .verdict.detected { color: #ef5350; }
+.result-info .verdict.clean { color: #66bb6a; }
+.result-scores {
+  display: flex; gap: 0.4rem; flex-shrink: 0;
 }
-.verdict {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin-bottom: 0.75rem;
-}
-.verdict.detected { color: #ff5252; }
-.verdict.clean { color: #4caf50; }
-.scores {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 0.5rem;
-}
-.score-item {
+.score-badge {
+  font-size: 0.65rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
   background: #1a1a22;
-  border-radius: 8px;
-  padding: 0.6rem;
-  text-align: center;
+  color: #666;
 }
-.score-item .label { font-size: 0.7rem; color: #888; text-transform: uppercase; }
-.score-item .value { font-size: 1rem; font-weight: 600; margin-top: 0.2rem; }
-.score-item .value.high { color: #ff5252; }
-.score-item .value.low { color: #666; }
+.score-badge.high { background: #2c1010; color: #ef5350; }
 
-.loading {
-  display: none;
-  text-align: center;
-  padding: 2rem;
-  color: #888;
+.loading-item {
+  display: flex; align-items: center; gap: 0.75rem;
+  background: #141419; border: 1px solid #222;
+  border-radius: 10px; padding: 0.75rem 1rem;
 }
-.loading.active { display: block; }
 .spinner {
-  width: 24px; height: 24px;
-  border: 3px solid #333;
-  border-top-color: #4f8cff;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-  margin: 0 auto 0.5rem;
+  width: 18px; height: 18px;
+  border: 2px solid #333; border-top-color: #4f8cff;
+  border-radius: 50%; animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 footer {
-  margin-top: auto;
-  padding-top: 3rem;
-  color: #555;
-  font-size: 0.75rem;
-  text-align: center;
+  margin-top: auto; padding-top: 3rem;
+  color: #555; font-size: 0.75rem; text-align: center;
 }
 footer a { color: #4f8cff; text-decoration: none; }
-
-.source-labels { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.3rem; }
-.source-label {
-  font-size: 0.65rem;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
-  background: #1a1a22;
-  color: #888;
-}
 </style>
 </head>
 <body>
 
 <h1>AI Watermark Detector</h1>
-<p class="subtitle">Detect SynthID and GPT-Image2 invisible watermarks. Runs entirely in your browser.</p>
+<p class="subtitle">Detect invisible watermarks from Nano Banana Pro, Nano Banana 2, and GPT-Image2</p>
 
-<div class="drop-zone" id="dropZone">
-  <div class="icon">+</div>
-  <strong>Drop image here or click to upload</strong>
-  <p>Supports JPG, PNG, WebP</p>
-  <div class="source-labels">
-    <span class="source-label">Nano Banana Pro</span>
-    <span class="source-label">Nano Banana 2</span>
-    <span class="source-label">GPT-Image2</span>
+<div class="upload-area">
+  <div class="drop-zone" id="dropZone">
+    <div class="icon">+</div>
+    <strong>Drop images here or click to upload</strong>
+    <p>Supports JPG, PNG, WebP. Multiple files and folders.</p>
+    <div class="tags">
+      <span class="tag">Nano Banana Pro</span>
+      <span class="tag">Nano Banana 2</span>
+      <span class="tag">GPT-Image2</span>
+    </div>
+  </div>
+  <div class="btn-row">
+    <div class="btn" id="btnPaste">Paste from clipboard (Ctrl+V)</div>
+    <div class="btn" id="btnFolder">Upload folder</div>
   </div>
 </div>
+
 <input type="file" id="fileInput" accept="image/*" multiple>
+<input type="file" id="folderInput" webkitdirectory multiple>
 
-<div class="loading" id="loading">
-  <div class="spinner"></div>
-  <p>Analyzing...</p>
-</div>
-
-<div id="result"></div>
+<div id="results"></div>
 
 <footer>
-  All processing happens locally in your browser. No images are uploaded to any server.<br>
+  All processing happens locally in your browser. No images are uploaded.<br>
   Based on <a href="https://github.com/aloshdenny/reverse-SynthID">reverse-SynthID</a> research.
 </footer>
 
 <script src="detector.js"></script>
 <script>
 const LABELS = {
-  synthid: 'Nano Banana Pro (SynthID)',
-  nanobanana2: 'Nano Banana 2 (SynthID)',
-  gptimage2: 'GPT-Image2 (OpenAI)',
+  synthid: 'Nano Banana Pro',
+  nanobanana2: 'Nano Banana 2',
+  gptimage2: 'GPT-Image2',
 };
 
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
-const resultDiv = document.getElementById('result');
-const loadingDiv = document.getElementById('loading');
+const folderInput = document.getElementById('folderInput');
+const resultsDiv = document.getElementById('results');
 
+// Drop zone
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
@@ -188,49 +170,89 @@ dropZone.addEventListener('drop', (e) => {
   dropZone.classList.remove('dragover');
   handleFiles(e.dataTransfer.files);
 });
+
+// File input
 fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
-async function handleFiles(files) {
-  if (!files.length) return;
-  resultDiv.style.display = 'block';
-  resultDiv.innerHTML = '';
-  loadingDiv.classList.add('active');
+// Folder upload
+document.getElementById('btnFolder').addEventListener('click', () => folderInput.click());
+folderInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
+// Paste from clipboard
+document.getElementById('btnPaste').addEventListener('click', async () => {
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const imageType = item.types.find(t => t.startsWith('image/'));
+      if (imageType) {
+        const blob = await item.getType(imageType);
+        const file = new File([blob], 'pasted-image.png', { type: imageType });
+        handleFiles([file]);
+      }
+    }
+  } catch (e) {
+    // Fallback: alert user
+    alert('Clipboard access denied. Try Ctrl+V instead.');
+  }
+});
+
+// Global paste listener
+document.addEventListener('paste', (e) => {
+  const files = [];
+  for (const item of e.clipboardData.items) {
+    if (item.type.startsWith('image/')) {
+      files.push(item.getAsFile());
+    }
+  }
+  if (files.length) handleFiles(files);
+});
+
+async function handleFiles(files) {
   for (const file of files) {
     if (!file.type.startsWith('image/')) continue;
+    const id = addLoadingItem(file.name);
     const result = await detect(file);
-    renderResult(file, result);
+    replaceWithResult(id, file, result);
   }
-  loadingDiv.classList.remove('active');
 }
 
-function renderResult(file, { scores, detected, maxScore }) {
-  const card = document.createElement('div');
-  card.className = `result-card ${detected ? 'detected' : 'clean'}`;
+let itemCounter = 0;
 
+function addLoadingItem(name) {
+  const id = 'item-' + (itemCounter++);
+  const el = document.createElement('div');
+  el.className = 'loading-item';
+  el.id = id;
+  el.innerHTML = `<div class="spinner"></div><span style="color:#888;font-size:0.8rem">${escHtml(name)}</span>`;
+  resultsDiv.prepend(el);
+  return id;
+}
+
+function replaceWithResult(id, file, { scores, detected, maxScore }) {
+  const el = document.getElementById(id);
   const thumb = URL.createObjectURL(file);
-  const verdictText = detected
-    ? `AI Generated - ${LABELS[detected] || detected}`
-    : 'No watermark detected';
-  const verdictClass = detected ? 'detected' : 'clean';
+  const cls = detected ? 'detected' : 'clean';
+  const verdictText = detected ? `${LABELS[detected] || detected} (${maxScore.toFixed(3)})` : 'No watermark';
 
-  let scoresHtml = '';
+  let badges = '';
   for (const [name, score] of Object.entries(scores)) {
-    const label = name === 'synthid' ? 'NB Pro' : name === 'nanobanana2' ? 'NB 2' : 'GPT';
-    const cls = score > 0.08 ? 'high' : 'low';
-    scoresHtml += `<div class="score-item"><div class="label">${label}</div><div class="value ${cls}">${score.toFixed(3)}</div></div>`;
+    const label = name === 'synthid' ? 'NBP' : name === 'nanobanana2' ? 'NB2' : 'GPT';
+    const hi = score > 0.08 ? 'high' : '';
+    badges += `<span class="score-badge ${hi}">${label} ${score.toFixed(3)}</span>`;
   }
 
-  card.innerHTML = `
-    <div class="result-header">
-      <img src="${thumb}" alt="">
-      <div class="filename">${file.name}</div>
+  el.className = `result-item ${cls}`;
+  el.innerHTML = `
+    <img src="${thumb}" alt="">
+    <div class="result-info">
+      <div class="name">${escHtml(file.name)}</div>
+      <div class="verdict ${cls}">${verdictText}</div>
     </div>
-    <div class="verdict ${verdictClass}">${verdictText}</div>
-    <div class="scores">${scoresHtml}</div>
+    <div class="result-scores">${badges}</div>
   `;
-  resultDiv.appendChild(card);
 }
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 </script>
 </body>
 </html>
