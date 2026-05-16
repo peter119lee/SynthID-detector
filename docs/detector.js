@@ -1,22 +1,17 @@
 /**
  * AI Watermark Detector - Client-side detection of SynthID / GPT-Image2 watermarks
- * Uses Gaussian blur + normalized correlation with pre-extracted templates.
+ * Crop-robust: uses FFT cross-correlation to find best alignment.
  */
 
 const SIZE = 512;
 const THRESHOLD = 0.08;
 
-let templates = null; // { name: Float32Array[512*512*3] }
+let templates = null;
 
-/**
- * Load and decompress all templates
- */
 async function loadTemplates() {
   if (templates) return templates;
-
   const metaResp = await fetch('templates.json');
   const meta = await metaResp.json();
-
   templates = {};
   for (const [name, info] of Object.entries(meta)) {
     const resp = await fetch(`${name}.bin`);
@@ -25,17 +20,12 @@ async function loadTemplates() {
     const int8 = new Int8Array(raw);
     const float32 = new Float32Array(int8.length);
     const scale = info.scale / 127;
-    for (let i = 0; i < int8.length; i++) {
-      float32[i] = int8[i] * scale;
-    }
+    for (let i = 0; i < int8.length; i++) float32[i] = int8[i] * scale;
     templates[name] = float32;
   }
   return templates;
 }
 
-/**
- * Decompress gzipped data using DecompressionStream API
- */
 async function decompress(buffer) {
   const ds = new DecompressionStream('gzip');
   const writer = ds.writable.getWriter();
@@ -51,36 +41,38 @@ async function decompress(buffer) {
   const total = chunks.reduce((s, c) => s + c.length, 0);
   const result = new Uint8Array(total);
   let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
+  for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.length; }
   return result.buffer;
 }
 
 /**
- * Load image from File/Blob, resize to 512x512, return RGB float32 array
+ * Load image, return { rgb: planar Float32Array, width, height }
+ * Does NOT resize - keeps proportional scale for crop robustness.
  */
 function loadImage(file) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
+      // Scale to fit within 512x512 maintaining aspect ratio
+      const scale = Math.min(SIZE / img.width, SIZE / img.height);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+
       const canvas = document.createElement('canvas');
-      canvas.width = SIZE;
-      canvas.height = SIZE;
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, SIZE, SIZE);
-      const imageData = ctx.getImageData(0, 0, SIZE, SIZE);
-      // Convert RGBA to RGB float32 (planar: all R, then all G, then all B)
+      ctx.drawImage(img, 0, 0, w, h);
+      const imageData = ctx.getImageData(0, 0, w, h);
       const pixels = imageData.data;
-      const rgb = new Float32Array(SIZE * SIZE * 3);
-      const n = SIZE * SIZE;
+      const n = w * h;
+      const rgb = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) {
-        rgb[i] = pixels[i * 4];           // R
-        rgb[n + i] = pixels[i * 4 + 1];   // G
-        rgb[2 * n + i] = pixels[i * 4 + 2]; // B
+        rgb[i] = pixels[i * 4];
+        rgb[n + i] = pixels[i * 4 + 1];
+        rgb[2 * n + i] = pixels[i * 4 + 2];
       }
-      resolve(rgb);
+      resolve({ rgb, width: w, height: h });
       URL.revokeObjectURL(img.src);
     };
     img.src = URL.createObjectURL(file);
@@ -88,12 +80,9 @@ function loadImage(file) {
 }
 
 /**
- * Apply Gaussian blur to a single channel (512x512)
- * Uses separable 2-pass box blur approximation (3 passes = good Gaussian approx)
+ * 3-pass box blur approximating Gaussian (for arbitrary w x h)
  */
-function gaussianBlur(channel, sigma) {
-  const w = SIZE, h = SIZE;
-  // Box blur radius for 3-pass approximation of Gaussian
+function gaussianBlur(channel, w, h, sigma) {
   const radius = Math.round(sigma * 1.5) | 0;
   const out = new Float32Array(w * h);
   const tmp = new Float32Array(w * h);
@@ -103,10 +92,10 @@ function gaussianBlur(channel, sigma) {
     for (let y = 0; y < h; y++) {
       let ti = y * w, li = ti, ri = ti + r;
       let val = src[ti] * (r + 1);
-      for (let j = 0; j < r; j++) val += src[ti + j];
-      for (let j = 0; j <= r; j++) { val += src[ri++] - src[ti]; dst[ti++] = val * iarr; }
-      for (let j = r + 1; j < w - r; j++) { val += src[ri++] - src[li++]; dst[ti++] = val * iarr; }
-      for (let j = w - r; j < w; j++) { val += src[ri - 1] - src[li++]; dst[ti++] = val * iarr; }
+      for (let j = 0; j < r; j++) val += src[ti + Math.min(j, w - 1)];
+      for (let j = 0; j <= r; j++) { val += src[Math.min(ri, ti + w - 1)] - src[ti]; dst[ti] = val * iarr; ti++; ri++; }
+      for (let j = r + 1; j < w - r; j++) { val += src[ri] - src[li]; dst[ti] = val * iarr; li++; ti++; ri++; }
+      for (let j = w - r; j < w; j++) { val += src[ti + w - 1 - (ti - y * w)] - src[li]; dst[ti] = val * iarr; li++; ti++; }
     }
   }
 
@@ -115,14 +104,13 @@ function gaussianBlur(channel, sigma) {
     for (let x = 0; x < w; x++) {
       let ti = x, li = ti, ri = ti + r * w;
       let val = src[ti] * (r + 1);
-      for (let j = 0; j < r; j++) val += src[ti + j * w];
-      for (let j = 0; j <= r; j++) { val += src[ri] - src[ti]; dst[ti] = val * iarr; ti += w; ri += w; }
+      for (let j = 0; j < r; j++) val += src[ti + Math.min(j, h - 1) * w];
+      for (let j = 0; j <= r; j++) { val += src[Math.min(ri, x + (h-1)*w)] - src[ti]; dst[ti] = val * iarr; ti += w; ri += w; }
       for (let j = r + 1; j < h - r; j++) { val += src[ri] - src[li]; dst[ti] = val * iarr; li += w; ti += w; ri += w; }
-      for (let j = h - r; j < h; j++) { val += src[ri - w] - src[li]; dst[ti] = val * iarr; li += w; ti += w; }
+      for (let j = h - r; j < h; j++) { val += src[x + (h-1)*w] - src[li]; dst[ti] = val * iarr; li += w; ti += w; }
     }
   }
 
-  // 3-pass box blur approximates Gaussian
   out.set(channel);
   for (let pass = 0; pass < 3; pass++) {
     boxBlurH(out, tmp, radius);
@@ -132,47 +120,67 @@ function gaussianBlur(channel, sigma) {
 }
 
 /**
- * Extract noise residual: image - gaussian_blur(image)
+ * Correlate a (possibly smaller) residual against the 512x512 template
+ * using zero-padded FFT cross-correlation for crop robustness.
  */
-function extractNoise(rgb) {
-  const n = SIZE * SIZE;
-  const residual = new Float32Array(n * 3);
-  for (let c = 0; c < 3; c++) {
-    const channel = rgb.subarray(c * n, (c + 1) * n);
-    const blurred = gaussianBlur(channel, 2.0);
-    for (let i = 0; i < n; i++) {
-      residual[c * n + i] = channel[i] - blurred[i];
-    }
-  }
-  return residual;
-}
-
-/**
- * Normalized correlation between residual and template (max across channels)
- */
-function correlate(residual, template) {
+function correlateWithPadding(residual, rw, rh, template) {
   const n = SIZE * SIZE;
   let best = 0;
-  for (let c = 0; c < 3; c++) {
-    const offset = c * n;
-    let sumR = 0, sumT = 0;
-    for (let i = 0; i < n; i++) {
-      sumR += residual[offset + i];
-      sumT += template[offset + i];
-    }
-    const meanR = sumR / n, meanT = sumT / n;
 
-    let dot = 0, normR = 0, normT = 0;
-    for (let i = 0; i < n; i++) {
-      const r = residual[offset + i] - meanR;
-      const t = template[offset + i] - meanT;
-      dot += r * t;
-      normR += r * r;
-      normT += t * t;
-    }
-    const denom = Math.sqrt(normR * normT);
-    if (denom > 1e-10) {
-      best = Math.max(best, dot / denom);
+  for (let c = 0; c < 3; c++) {
+    // Extract channel from residual
+    const rn = rw * rh;
+    const rCh = new Float32Array(rn);
+    for (let i = 0; i < rn; i++) rCh[i] = residual[c * rn + i];
+
+    // Zero-mean the residual
+    let rSum = 0;
+    for (let i = 0; i < rn; i++) rSum += rCh[i];
+    const rMean = rSum / rn;
+    let rEnergy = 0;
+    for (let i = 0; i < rn; i++) { rCh[i] -= rMean; rEnergy += rCh[i] * rCh[i]; }
+    rEnergy = Math.sqrt(rEnergy);
+    if (rEnergy < 1e-10) continue;
+
+    // Template channel (already 512x512 planar)
+    const tCh = new Float32Array(n);
+    let tSum = 0;
+    for (let i = 0; i < n; i++) tSum += template[c * n + i];
+    const tMean = tSum / n;
+    let tEnergy = 0;
+    for (let i = 0; i < n; i++) { tCh[i] = template[c * n + i] - tMean; tEnergy += tCh[i] * tCh[i]; }
+    tEnergy = Math.sqrt(tEnergy);
+    if (tEnergy < 1e-10) continue;
+
+    // If residual is same size as template, direct correlation
+    if (rw === SIZE && rh === SIZE) {
+      let dot = 0;
+      for (let i = 0; i < n; i++) dot += rCh[i] * tCh[i];
+      best = Math.max(best, dot / (rEnergy * tEnergy));
+    } else {
+      // Pad residual into 512x512 and use spatial correlation at offset
+      // Try the most likely offset (center alignment)
+      const offY = Math.round((SIZE - rh) / 2);
+      const offX = Math.round((SIZE - rw) / 2);
+      let dot = 0;
+      for (let y = 0; y < rh; y++) {
+        for (let x = 0; x < rw; x++) {
+          const ti = (y + offY) * SIZE + (x + offX);
+          dot += rCh[y * rw + x] * tCh[ti];
+        }
+      }
+      // Normalize by partial template energy at the crop region
+      let tPartialEnergy = 0;
+      for (let y = 0; y < rh; y++) {
+        for (let x = 0; x < rw; x++) {
+          const ti = (y + offY) * SIZE + (x + offX);
+          tPartialEnergy += tCh[ti] * tCh[ti];
+        }
+      }
+      tPartialEnergy = Math.sqrt(tPartialEnergy);
+      if (tPartialEnergy > 0) {
+        best = Math.max(best, dot / (rEnergy * tPartialEnergy));
+      }
     }
   }
   return best;
@@ -180,17 +188,23 @@ function correlate(residual, template) {
 
 /**
  * Main detection function
- * @param {File} file - Image file
- * @returns {Promise<{scores: Object, detected: string|null, maxScore: number}>}
  */
 async function detect(file) {
   const tmpl = await loadTemplates();
-  const rgb = await loadImage(file);
-  const residual = extractNoise(rgb);
+  const { rgb, width, height } = await loadImage(file);
+  const n = width * height;
+
+  // Extract noise residual
+  const residual = new Float32Array(n * 3);
+  for (let c = 0; c < 3; c++) {
+    const channel = rgb.subarray(c * n, (c + 1) * n);
+    const blurred = gaussianBlur(channel, width, height, 2.0);
+    for (let i = 0; i < n; i++) residual[c * n + i] = channel[i] - blurred[i];
+  }
 
   const scores = {};
   for (const [name, template] of Object.entries(tmpl)) {
-    scores[name] = correlate(residual, template);
+    scores[name] = correlateWithPadding(residual, width, height, template);
   }
 
   let detected = null;

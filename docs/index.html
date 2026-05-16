@@ -165,11 +165,34 @@ const resultsDiv = document.getElementById('results');
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-dropZone.addEventListener('drop', (e) => {
+dropZone.addEventListener('drop', async (e) => {
   e.preventDefault();
   dropZone.classList.remove('dragover');
-  handleFiles(e.dataTransfer.files);
+  // Support folder drag-and-drop
+  const files = [];
+  if (e.dataTransfer.items) {
+    const entries = [...e.dataTransfer.items]
+      .map(i => i.webkitGetAsEntry && i.webkitGetAsEntry())
+      .filter(Boolean);
+    await collectFiles(entries, files);
+  } else {
+    for (const f of e.dataTransfer.files) files.push(f);
+  }
+  handleFiles(files);
 });
+
+async function collectFiles(entries, result) {
+  for (const entry of entries) {
+    if (entry.isFile) {
+      const file = await new Promise(r => entry.file(r));
+      if (file.type.startsWith('image/')) result.push(file);
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const children = await new Promise(r => reader.readEntries(r));
+      await collectFiles(children, result);
+    }
+  }
+}
 
 // File input
 fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
