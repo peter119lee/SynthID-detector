@@ -95,6 +95,17 @@ Exit codes:
 - Template quality improves with more reference images (50+ ideal)
 - Threshold may need tuning per deployment
 
+## Disclaimer
+
+This is an experimental research tool. It should **NOT** be used as the sole basis for legal decisions, journalism fact-checking, or content moderation. False positives and false negatives can occur. Always verify results with multiple methods.
+
+## TODO
+
+- [ ] Build stronger templates with 200+ images per model (currently 12-14)
+- [ ] Test against 50+ diverse real photos (phone cameras, DSLR, memes, screenshots) to validate false positive rate
+- [ ] Add support for Grok, Midjourney, DALL-E 3, and other AI image generators
+- [ ] Investigate frequency-domain carrier detection for crop robustness
+
 ## Files
 
 - `detect.py` — main detector (build + check)
